@@ -3,74 +3,75 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Nano Banana Pro — Image Generator</title>
+  <title>MultiGen — Generate & Edit</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
 <body class="min-h-screen bg-zinc-950 text-zinc-50">
   <div class="max-w-6xl mx-auto px-4 py-10">
 
-    <!-- Top bar -->
     <div class="flex items-start justify-between gap-4 flex-wrap">
       <div>
-        <h1 class="text-3xl md:text-4xl font-semibold tracking-tight">
-          Nano Banana Pro — массоввая генерация :)
-        </h1>
-        <p class="text-zinc-400 mt-2">
-          Вставь API key, напиши prompt, выбери параметры и получи галерею.
-        </p>
+        <h1 class="text-3xl md:text-4xl font-semibold tracking-tight">MultiGen — Generate & Edit</h1>
+        <p class="text-zinc-400 mt-2">Генерация из текста и редактирование загруженного фото.</p>
 
-        <!-- TG text -->
         <div class="mt-3 text-sm text-zinc-400">
           Если будут вопросы — пиши в TG:
           <a class="underline hover:text-zinc-200"
              href="https://web.telegram.org/k/#@egreen19"
-             target="_blank" rel="noreferrer">
-            @egreen19
-          </a>
+             target="_blank" rel="noreferrer">@egreen19</a>
         </div>
       </div>
 
-      <!-- TG Support button -->
-      <a href="https://web.telegram.org/k/#@egreen19"
-         target="_blank" rel="noreferrer"
+      <a href="https://web.telegram.org/k/#@egreen19" target="_blank" rel="noreferrer"
          class="inline-flex items-center gap-2 rounded-xl bg-zinc-900/60 border border-zinc-800 px-3 py-2 hover:border-zinc-600 transition shadow-lg">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M21.8 4.6c.3-1.4-1.1-2-2.2-1.6L3.7 9.1c-1.6.6-1.6 2.8.2 3.3l4.3 1.3 1.6 4.8c.5 1.6 2.7 1.7 3.4.2l2.4-4.9 4.1-7.9c.1-.2.1-.4-.1-.5-.2-.1-.4-.1-.6 0l-7.3 6.2c-.3.2-.7.2-1 0l-3-2c-.3-.2-.3-.6 0-.8l12.1-4.7z"
-                stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
-        </svg>
         <span class="text-sm text-zinc-200">TG Support</span>
       </a>
     </div>
 
-    <div class="mt-8 grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <!-- Left: controls -->
+    <!-- Tabs -->
+    <div class="mt-6 inline-flex rounded-xl bg-zinc-900/60 border border-zinc-800 p-1">
+      <button id="tabGenerate" class="px-4 py-2 text-sm rounded-lg bg-white text-zinc-900">Generate</button>
+      <button id="tabEdit" class="px-4 py-2 text-sm rounded-lg text-zinc-200 hover:bg-zinc-950/50">Edit photo</button>
+    </div>
+
+    <div class="mt-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
+      <!-- Controls -->
       <div class="lg:col-span-2 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-lg">
         <form id="form" class="space-y-4">
+
           <div>
             <label class="block text-sm text-zinc-300 mb-2">Gemini API key</label>
             <input id="apiKey" type="password" autocomplete="off"
               class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 outline-none focus:border-zinc-500"
               placeholder="AIzaSy..." />
-            <p class="text-xs text-zinc-500 mt-2">
-              Ключ не сохраняется. Используется только для запроса.
-            </p>
+            <p class="text-xs text-zinc-500 mt-2">Ключ не сохраняется. Используется только для запроса.</p>
+          </div>
+
+          <!-- Edit-only: upload -->
+          <div id="uploadWrap" class="hidden">
+            <label class="block text-sm text-zinc-300 mb-2">Загрузить фото</label>
+            <input id="imageFile" type="file" accept="image/*"
+              class="block w-full text-sm text-zinc-300
+                     file:mr-3 file:rounded-xl file:border-0
+                     file:bg-white file:text-zinc-900 file:px-4 file:py-2
+                     hover:file:bg-zinc-200" />
+            <div id="previewWrap" class="mt-3 hidden">
+              <div class="text-xs text-zinc-500 mb-2">Preview:</div>
+              <img id="previewImg" class="w-full rounded-xl border border-zinc-800" />
+            </div>
           </div>
 
           <div>
             <div class="flex items-center justify-between gap-2 mb-2">
               <label class="block text-sm text-zinc-300">Prompt</label>
-
-              <!-- Copy prompt button -->
               <button id="copyPrompt" type="button"
                 class="text-xs px-2 py-1 rounded-lg bg-zinc-950 border border-zinc-800 hover:border-zinc-600 transition">
                 Copy prompt
               </button>
             </div>
-
             <textarea id="prompt" rows="5"
               class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 outline-none focus:border-zinc-500"></textarea>
-
             <div id="copyStatus" class="mt-2 text-xs text-zinc-500"></div>
           </div>
 
@@ -79,8 +80,8 @@
               <label class="block text-sm text-zinc-300 mb-2">Модель</label>
               <select id="model"
                 class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 outline-none focus:border-zinc-500">
-                <option value="gemini-3-pro-image-preview" selected>Nano Banana Pro (gemini-3-pro-image-preview)</option>
-                <option value="gemini-2.5-flash-image">Nano Banana (gemini-2.5-flash-image)</option>
+                <option value="gemini-3-pro-image-preview" selected>gemini-3-pro-image-preview</option>
+                <option value="gemini-2.5-flash-image">gemini-2.5-flash-image</option>
               </select>
             </div>
 
@@ -88,23 +89,15 @@
               <label class="block text-sm text-zinc-300 mb-2">Кол-во</label>
               <input id="numImages" type="number" min="1" max="10" value="4"
                 class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 outline-none focus:border-zinc-500" />
-              <p class="text-xs text-zinc-500 mt-1">1–10</p>
             </div>
 
             <div>
               <label class="block text-sm text-zinc-300 mb-2">Aspect ratio</label>
               <select id="aspectRatio"
                 class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 outline-none focus:border-zinc-500">
-                <option>1:1</option>
-                <option>16:9</option>
-                <option>9:16</option>
-                <option>4:3</option>
-                <option>3:2</option>
-                <option>2:3</option>
-                <option>3:4</option>
-                <option>4:5</option>
-                <option>5:4</option>
-                <option>21:9</option>
+                <option>1:1</option><option>16:9</option><option>9:16</option><option>4:3</option>
+                <option>3:2</option><option>2:3</option><option>3:4</option><option>4:5</option>
+                <option>5:4</option><option>21:9</option>
               </select>
             </div>
 
@@ -112,14 +105,12 @@
               <label class="block text-sm text-zinc-300 mb-2">Resolution</label>
               <select id="resolution"
                 class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 outline-none focus:border-zinc-500">
-                <option>1K</option>
-                <option>2K</option>
-                <option>4K</option>
+                <option>1K</option><option>2K</option><option>4K</option>
               </select>
             </div>
           </div>
 
-          <!-- Progress UI -->
+          <!-- Progress -->
           <div id="progressWrap" class="hidden">
             <div class="flex items-center justify-between text-xs text-zinc-400 mb-2">
               <div id="progressText">0/0</div>
@@ -132,14 +123,14 @@
 
           <button id="btn" type="submit"
             class="w-full rounded-xl bg-white text-zinc-900 font-medium py-2.5 hover:bg-zinc-200 transition">
-            Генерировать
+            Run
           </button>
 
           <div id="status" class="text-sm text-zinc-400"></div>
         </form>
       </div>
 
-      <!-- Right: results -->
+      <!-- Results -->
       <div class="lg:col-span-3 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-lg">
         <div class="flex items-center justify-between gap-3">
           <h2 class="text-lg font-semibold">Результат</h2>
@@ -150,7 +141,6 @@
         </div>
 
         <div id="grid" class="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"></div>
-
         <div id="empty" class="mt-10"></div>
       </div>
     </div>

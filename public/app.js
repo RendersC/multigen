@@ -13,20 +13,27 @@ const progressText = document.getElementById("progressText");
 const progressPct = document.getElementById("progressPct");
 const progressBar = document.getElementById("progressBar");
 
+const tabGenerate = document.getElementById("tabGenerate");
+const tabEdit = document.getElementById("tabEdit");
+const uploadWrap = document.getElementById("uploadWrap");
+const imageFile = document.getElementById("imageFile");
+const previewWrap = document.getElementById("previewWrap");
+const previewImg = document.getElementById("previewImg");
+
+let mode = "generate"; // "generate" | "edit"
+
 function setStatus(text) {
   statusEl.textContent = text || "";
 }
 
 function setLoading(isLoading) {
   btn.disabled = isLoading;
-  btn.textContent = isLoading ? "Генерирую..." : "Генерировать";
+  btn.textContent = isLoading ? "Working..." : "Run";
   btn.classList.toggle("opacity-60", isLoading);
   btn.classList.toggle("cursor-not-allowed", isLoading);
 }
 
 function setProgress(current, total) {
-  if (!progressWrap) return;
-
   if (!total || total <= 0) {
     progressWrap.classList.add("hidden");
     progressText.textContent = "0/0";
@@ -34,10 +41,8 @@ function setProgress(current, total) {
     progressBar.style.width = "0%";
     return;
   }
-
   progressWrap.classList.remove("hidden");
   progressText.textContent = `${current}/${total}`;
-
   const pct = Math.round((current / total) * 100);
   progressPct.textContent = `${pct}%`;
   progressBar.style.width = `${pct}%`;
@@ -50,7 +55,6 @@ function addImageCard(src, idx) {
   wrap.className =
     "group rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow transition relative";
 
-  // dark glow effect
   const glow = document.createElement("div");
   glow.className =
     "pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-300";
@@ -71,7 +75,7 @@ function addImageCard(src, idx) {
 
   const a = document.createElement("a");
   a.href = src;
-  a.download = `banana_${idx}.png`;
+  a.download = `multigen_${mode}_${idx}.png`;
   a.className =
     "text-xs px-2 py-1 rounded-lg border border-zinc-800 hover:border-zinc-600 transition";
   a.textContent = "Download";
@@ -83,7 +87,6 @@ function addImageCard(src, idx) {
   wrap.appendChild(img);
   wrap.appendChild(footer);
 
-  // subtle hover border
   wrap.addEventListener("mouseenter", () => wrap.classList.add("border-zinc-600"));
   wrap.addEventListener("mouseleave", () => wrap.classList.remove("border-zinc-600"));
 
@@ -99,20 +102,86 @@ function clearGrid() {
 
 clearBtn.addEventListener("click", clearGrid);
 
-// Copy prompt feature
-copyBtn?.addEventListener("click", async () => {
+// Copy prompt
+copyBtn.addEventListener("click", async () => {
   const prompt = document.getElementById("prompt").value;
   try {
     await navigator.clipboard.writeText(prompt);
-    copyStatus.textContent = "Скопировано";
+    copyStatus.textContent = "✅ Скопировано";
     setTimeout(() => (copyStatus.textContent = ""), 1200);
   } catch {
-    copyStatus.textContent = "Не удалось скопировать (разреши доступ к буферу)";
+    copyStatus.textContent = "❌ Не удалось скопировать";
     setTimeout(() => (copyStatus.textContent = ""), 2000);
   }
 });
 
-// Progress generation: sequential requests (better progress control)
+// Tabs
+function setMode(next) {
+  mode = next;
+  clearGrid();
+
+  if (mode === "generate") {
+    tabGenerate.className = "px-4 py-2 text-sm rounded-lg bg-white text-zinc-900";
+    tabEdit.className = "px-4 py-2 text-sm rounded-lg text-zinc-200 hover:bg-zinc-950/50";
+    uploadWrap.classList.add("hidden");
+  } else {
+    tabEdit.className = "px-4 py-2 text-sm rounded-lg bg-white text-zinc-900";
+    tabGenerate.className = "px-4 py-2 text-sm rounded-lg text-zinc-200 hover:bg-zinc-950/50";
+    uploadWrap.classList.remove("hidden");
+  }
+}
+
+tabGenerate.addEventListener("click", () => setMode("generate"));
+tabEdit.addEventListener("click", () => setMode("edit"));
+
+// Preview uploaded image
+imageFile?.addEventListener("change", () => {
+  const file = imageFile.files?.[0];
+  if (!file) {
+    previewWrap.classList.add("hidden");
+    previewImg.removeAttribute("src");
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  previewImg.src = url;
+  previewWrap.classList.remove("hidden");
+});
+
+async function callGenerateOne({ apiKey, prompt, aspectRatio, resolution, model }) {
+  const resp = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      apiKey,
+      prompt,
+      numImages: 1,
+      aspectRatio,
+      resolution,
+      model
+    })
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data?.error || "Request failed");
+  return data?.images?.[0];
+}
+
+async function callEditOne({ apiKey, prompt, aspectRatio, resolution, model, file }) {
+  const fd = new FormData();
+  fd.append("apiKey", apiKey);
+  fd.append("prompt", prompt);
+  fd.append("numImages", "1");
+  fd.append("aspectRatio", aspectRatio);
+  fd.append("resolution", resolution);
+  fd.append("model", model);
+  fd.append("image", file);
+
+  const resp = await fetch("/api/edit", { method: "POST", body: fd });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data?.error || "Request failed");
+  return data?.images?.[0];
+}
+
+// Run
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   setStatus("");
@@ -126,54 +195,39 @@ form.addEventListener("submit", async (e) => {
 
   const total = Math.max(1, Math.min(10, parseInt(numImagesRaw, 10) || 1));
 
-  if (!apiKey || apiKey.length < 10) {
-    setStatus("Вставь нормальный API key.");
-    return;
-  }
-  if (!prompt || prompt.length < 2) {
-    setStatus("Напиши prompt.");
-    return;
+  if (!apiKey || apiKey.length < 10) return setStatus("❌ Вставь нормальный API key.");
+  if (!prompt || prompt.length < 2) return setStatus("❌ Напиши prompt.");
+
+  let file = null;
+  if (mode === "edit") {
+    file = imageFile.files?.[0] || null;
+    if (!file) return setStatus("❌ Загрузи фото для редактирования.");
   }
 
   setLoading(true);
   clearGrid();
   setProgress(0, total);
-  setStatus("Генерация началась...");
+  setStatus("⏳ Работаю...");
 
   try {
-    // Чтобы показать прогресс красиво — делаем по 1 картинке за запрос.
-    // Сервер уже умеет multiple, но здесь мы дергаем по 1 для live-progress.
     for (let i = 1; i <= total; i++) {
-      setStatus(`Генерирую ${i}/${total}...`);
+      setStatus(`⏳ ${mode === "edit" ? "Редактирую" : "Генерирую"} ${i}/${total}...`);
       setProgress(i - 1, total);
 
-      const resp = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          apiKey,
-          prompt,
-          numImages: 1,
-          aspectRatio,
-          resolution,
-          model
-        })
-      });
+      const src = (mode === "edit")
+        ? await callEditOne({ apiKey, prompt, aspectRatio, resolution, model, file })
+        : await callGenerateOne({ apiKey, prompt, aspectRatio, resolution, model });
 
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || "Request failed");
-
-      // сервер вернёт images: [dataUrl]
-      const src = data?.images?.[0];
       if (src) addImageCard(src, i);
-
       setProgress(i, total);
     }
-
-    setStatus(`Готово: ${total}/${total}`);
+    setStatus(`✅ Готово: ${total}/${total}`);
   } catch (err) {
-    setStatus(`Ошибка: ${err.message}`);
+    setStatus(`❌ Ошибка: ${err.message}`);
   } finally {
     setLoading(false);
   }
 });
+
+// init
+setMode("generate");

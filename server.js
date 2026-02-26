@@ -1,18 +1,21 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
+import multer from "multer";
 import { GoogleGenAI } from "@google/genai";
 
 const app = express();
-app.use(express.json({ limit: "2mb" }));
+
+app.use(express.json({ limit: "2mb" })); // для /api/generate
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } }); // 15MB
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Статика (фронт)
+// Frontend static
 app.use(express.static(path.join(__dirname, "public")));
 
-// Простая очередь, чтобы не убить лимиты (одновременно максимум 2 генерации)
+// limiter (max 2 concurrent)
 function createLimiter(maxConcurrent = 2) {
   let active = 0;
   const queue = [];
@@ -40,7 +43,6 @@ function createLimiter(maxConcurrent = 2) {
       next();
     });
 }
-
 const limit = createLimiter(2);
 
 function clampInt(v, min, max, fallback) {
@@ -49,9 +51,20 @@ function clampInt(v, min, max, fallback) {
   return Math.max(min, Math.min(max, n));
 }
 
+function safeAspectRatio(v) {
+  const allowed = ["1:1","2:3","3:2","3:4","4:3","4:5","5:4","9:16","16:9","21:9"];
+  return allowed.includes(v) ? v : "1:1";
+}
+function safeResolution(v) {
+  return ["1K","2K","4K"].includes(v) ? v : "1K";
+}
+function safeModel(v) {
+  return (v === "gemini-2.5-flash-image" || v === "gemini-3-pro-image-preview")
+    ? v
+    : "gemini-3-pro-image-preview";
+}
+
 function pickOneImageFromResponse(resp) {
-  // Официальный пример: изображения приходят как inlineData в parts
-  // Берём первый найденный base64
   const cand = resp?.candidates?.[0];
   const parts = cand?.content?.parts || [];
   for (const part of parts) {
@@ -65,16 +78,10 @@ function pickOneImageFromResponse(resp) {
   return null;
 }
 
+// ---------- TEXT -> IMAGE ----------
 app.post("/api/generate", async (req, res) => {
   try {
-    const {
-      apiKey,
-      prompt,
-      numImages,
-      aspectRatio,
-      resolution,
-      model
-    } = req.body || {};
+    const { apiKey, prompt, numImages, aspectRatio, resolution, model } = req.body || {};
 
     if (!apiKey || typeof apiKey !== "string" || apiKey.length < 10) {
       return res.status(400).json({ error: "API key is required." });
@@ -84,66 +91,95 @@ app.post("/api/generate", async (req, res) => {
     }
 
     const n = clampInt(numImages, 1, 10, 1);
-
-    const safeAspect = ([
-      "1:1","2:3","3:2","3:4","4:3","4:5","5:4","9:16","16:9","21:9"
-    ].includes(aspectRatio) ? aspectRatio : "1:1");
-
-    const safeRes = (["1K","2K","4K"].includes(resolution) ? resolution : "1K");
-
-    // По умолчанию Nano Banana Pro:
-    const safeModel =
-      (model === "gemini-2.5-flash-image" || model === "gemini-3-pro-image-preview")
-        ? model
-        : "gemini-3-pro-image-preview";
+    const ar = safeAspectRatio(aspectRatio);
+    const reso = safeResolution(resolution);
+    const m = safeModel(model);
 
     const ai = new GoogleGenAI({ apiKey });
 
     const tasks = Array.from({ length: n }, (_, i) =>
       limit(async () => {
         const resp = await ai.models.generateContent({
-          model: safeModel,
+          model: m,
           contents: prompt,
           config: {
-            // Можно поставить ["IMAGE"] (в доках есть такой режим),
-            // но оставляем ["TEXT","IMAGE"] максимально совместимо.
             responseModalities: ["TEXT", "IMAGE"],
-            imageConfig: {
-              aspectRatio: safeAspect,
-              // 2K/4K имеет смысл в основном для gemini-3-pro-image-preview
-              imageSize: safeRes
-            }
+            imageConfig: { aspectRatio: ar, imageSize: reso }
           }
         });
 
         const img = pickOneImageFromResponse(resp);
-        if (!img) {
-          throw new Error(`No image returned (index ${i}).`);
-        }
+        if (!img) throw new Error(`No image returned (index ${i}).`);
         return img;
       })
     );
 
     const images = await Promise.all(tasks);
-
-    // Возвращаем data URL, чтобы фронт сразу показал <img>
     const dataUrls = images.map((x) => `data:${x.mimeType};base64,${x.base64}`);
 
-    res.json({
-      model: safeModel,
-      aspectRatio: safeAspect,
-      resolution: safeRes,
-      count: dataUrls.length,
-      images: dataUrls
-    });
+    res.json({ mode: "generate", model: m, aspectRatio: ar, resolution: reso, count: dataUrls.length, images: dataUrls });
   } catch (err) {
-    // Не логируем ключ, просто отдаем ошибку
-    const msg = err?.message || "Generation failed.";
-    res.status(500).json({ error: msg });
+    res.status(500).json({ error: err?.message || "Generation failed." });
+  }
+});
+
+// ---------- IMAGE -> IMAGE (EDIT) ----------
+app.post("/api/edit", upload.single("image"), async (req, res) => {
+  try {
+    const apiKey = (req.body.apiKey || "").trim();
+    const prompt = (req.body.prompt || "").trim();
+    const numImages = req.body.numImages;
+    const aspectRatio = req.body.aspectRatio;
+    const resolution = req.body.resolution;
+    const model = req.body.model;
+
+    if (!apiKey || apiKey.length < 10) return res.status(400).json({ error: "API key is required." });
+    if (!prompt || prompt.length < 2) return res.status(400).json({ error: "Prompt is required." });
+    if (!req.file) return res.status(400).json({ error: "Image file is required." });
+
+    const n = clampInt(numImages, 1, 10, 1);
+    const ar = safeAspectRatio(aspectRatio);
+    const reso = safeResolution(resolution);
+    const m = safeModel(model);
+
+    const mimeType = req.file.mimetype || "image/png";
+    const base64 = req.file.buffer.toString("base64");
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    const tasks = Array.from({ length: n }, (_, i) =>
+      limit(async () => {
+        const resp = await ai.models.generateContent({
+          model: m,
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { inlineData: { mimeType, data: base64 } },
+                { text: prompt }
+              ]
+            }
+          ],
+          config: {
+            responseModalities: ["TEXT", "IMAGE"],
+            imageConfig: { aspectRatio: ar, imageSize: reso }
+          }
+        });
+
+        const img = pickOneImageFromResponse(resp);
+        if (!img) throw new Error(`No edited image returned (index ${i}).`);
+        return img;
+      })
+    );
+
+    const images = await Promise.all(tasks);
+    const dataUrls = images.map((x) => `data:${x.mimeType};base64,${x.base64}`);
+
+    res.json({ mode: "edit", model: m, aspectRatio: ar, resolution: reso, count: dataUrls.length, images: dataUrls });
+  } catch (err) {
+    res.status(500).json({ error: err?.message || "Edit failed." });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ Running on http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`✅ Running on http://localhost:${PORT}`));
