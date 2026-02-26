@@ -146,6 +146,37 @@
     </div>
   </div>
 
+  <!-- Image Modal -->
+  <div id="imgModal" class="hidden fixed inset-0 z-50">
+    <div id="imgModalBackdrop" class="absolute inset-0 bg-black/80"></div>
+
+    <div class="relative w-full h-full flex items-center justify-center p-4">
+      <div class="relative max-w-6xl w-full">
+        <button id="imgModalClose"
+          class="absolute -top-3 -right-3 rounded-full bg-zinc-900 border border-zinc-700 w-10 h-10 flex items-center justify-center hover:border-zinc-500">
+          ✕
+        </button>
+
+        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+            <div class="text-sm text-zinc-300" id="imgModalTitle">Preview</div>
+            <a id="imgModalDownload"
+               class="text-sm px-3 py-1.5 rounded-lg bg-white text-zinc-900 hover:bg-zinc-200 transition"
+               download="image.png"
+               href="#">
+              Download
+            </a>
+          </div>
+
+          <div class="bg-black flex items-center justify-center">
+            <img id="imgModalImg" src="" alt="Full preview"
+                 class="max-h-[80vh] w-auto object-contain select-none" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="./app.js"></script>
 </body>
 </html>

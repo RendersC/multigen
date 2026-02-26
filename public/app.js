@@ -20,6 +20,14 @@ const imageFile = document.getElementById("imageFile");
 const previewWrap = document.getElementById("previewWrap");
 const previewImg = document.getElementById("previewImg");
 
+// Modal elements
+const imgModal = document.getElementById("imgModal");
+const imgModalImg = document.getElementById("imgModalImg");
+const imgModalBackdrop = document.getElementById("imgModalBackdrop");
+const imgModalClose = document.getElementById("imgModalClose");
+const imgModalDownload = document.getElementById("imgModalDownload");
+const imgModalTitle = document.getElementById("imgModalTitle");
+
 let mode = "generate"; // "generate" | "edit"
 
 function setStatus(text) {
@@ -48,6 +56,33 @@ function setProgress(current, total) {
   progressBar.style.width = `${pct}%`;
 }
 
+// ----- Modal -----
+function openModal(src, title = "Preview") {
+  imgModalTitle.textContent = title;
+  imgModalImg.src = src;
+  imgModalDownload.href = src;
+  imgModalDownload.download = `${title.replace(/[^\w\-]+/g, "_")}.png`;
+
+  imgModal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+
+function closeModal() {
+  imgModal.classList.add("hidden");
+  imgModalImg.src = "";
+  document.body.style.overflow = "";
+}
+
+imgModalBackdrop?.addEventListener("click", closeModal);
+imgModalClose?.addEventListener("click", closeModal);
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !imgModal.classList.contains("hidden")) {
+    closeModal();
+  }
+});
+
+// ----- UI helpers -----
 function addImageCard(src, idx) {
   if (empty) empty.style.display = "none";
 
@@ -64,7 +99,8 @@ function addImageCard(src, idx) {
   const img = document.createElement("img");
   img.src = src;
   img.alt = `image-${idx}`;
-  img.className = "w-full h-64 object-cover";
+  img.className = "w-full h-64 object-cover cursor-zoom-in";
+  img.addEventListener("click", () => openModal(src, `${mode.toUpperCase()} #${idx}`));
 
   const footer = document.createElement("div");
   footer.className = "p-3 flex items-center justify-between gap-2";
@@ -147,6 +183,7 @@ imageFile?.addEventListener("change", () => {
   previewWrap.classList.remove("hidden");
 });
 
+// API calls (one image per request to show progress)
 async function callGenerateOne({ apiKey, prompt, aspectRatio, resolution, model }) {
   const resp = await fetch("/api/generate", {
     method: "POST",
